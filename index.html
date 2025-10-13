@@ -73,6 +73,7 @@
             height: 44px;
             display: flex;
             align-items: center;
+            justify-content: center;
             padding: 0 8px;
             gap: 8px;
             overflow-x: auto;
@@ -92,6 +93,8 @@
             cursor: pointer;
         }
         .menu-item:hover { background: rgba(255,255,255,0.12); }
+        /* Offset story content so menu does not overlap hero/header */
+        #story { padding-top: 52px; }
 
         #header {
             margin: auto;
@@ -163,6 +166,7 @@
             padding-bottom: 50vh;
             /* margin-bottom: 10vh; */
             opacity: 0.25;
+            scroll-margin-top: 60px; /* avoid being covered by fixed menu */
         }
 
         .step.active {
@@ -326,6 +330,30 @@
 
         story.appendChild(features);
 
+        // Helper to programmatically activate a chapter without scrolling the story
+        function activateChapter(chapter) {
+            if (!chapter) return;
+            map[chapter.mapAnimation || 'flyTo'](chapter.location);
+            if (config.showMarkers && typeof marker !== 'undefined' && marker) {
+                marker.setLngLat(chapter.location.center);
+            }
+            if (Array.isArray(chapter.onChapterEnter) && chapter.onChapterEnter.length > 0) {
+                chapter.onChapterEnter.forEach(setLayerOpacity);
+            }
+            if (chapter.callback && typeof window[chapter.callback] === 'function') {
+                window[chapter.callback]();
+            }
+            if (chapter.rotateAnimation) {
+                map.once('moveend', () => {
+                    const rotateNumber = map.getBearing();
+                    map.rotateTo(rotateNumber + 180, {
+                        duration: 30000,
+                        easing: function (t) { return t; }
+                    });
+                });
+            }
+        }
+
         // Build state menu from chapters that represent states (e.g., *Choro chapters)
         (function buildStateMenu() {
             var menu = document.getElementById('state-menu');
@@ -354,8 +382,11 @@
                 btn.type = 'button';
                 btn.textContent = label;
                 btn.addEventListener('click', function() {
+                    // Jump to the chapter content instantly (no smooth scroll)
                     var el = document.getElementById(ch.id);
-                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    if (el) el.scrollIntoView({ behavior: 'auto', block: 'start' });
+                    // And fly the map to the chapter's location
+                    activateChapter(ch);
                 });
                 menu.appendChild(btn);
             });
@@ -384,9 +415,18 @@
             zoom: config.chapters[0].location.zoom,
             bearing: config.chapters[0].location.bearing,
             pitch: config.chapters[0].location.pitch,
-            interactive: false,
+            interactive: true,
             projection: config.projection
         });
+
+        // Disable user panning/zooming/rotation; keep interactivity for popups
+        map.dragPan.disable();
+        map.scrollZoom.disable();
+        map.boxZoom.disable();
+        map.dragRotate.disable();
+        map.keyboard.disable();
+        map.doubleClickZoom.disable();
+        map.touchZoomRotate.disable();
 
         // Create a inset map if enabled in config.js
         if (config.inset) {
@@ -521,38 +561,99 @@
 
                 
 
+            // Add swing counties source with promoteId for feature-state highlighting
+            map.addSource('swing-counties', {
+                type: 'geojson',
+                data: 'swingstatedata.geojson',
+                promoteId: 'GEOID'
+            });
+
+            // Base fill layer for county results
             map.addLayer({
                 id: 'county_results',
                 type: 'fill',
-                'source':  {type: 'geojson',
-                    data: 'swingStateData.geojson'
-                    },                        
-                    paint: {
-                        'fill-color': [
-                            'interpolate',
-                            ['linear'],
-                            ['/', 
+                source: 'swing-counties',
+                paint: {
+                    'fill-color': [
+                        'interpolate',
+                        ['linear'],
+                        ['/', 
+                            ['coalesce', ['get', 'per_gop'], 0],  
+                            ['+', 
                                 ['coalesce', ['get', 'per_gop'], 0],  
-                                ['+', 
-                                    ['coalesce', ['get', 'per_gop'], 0],  
-                                    ['coalesce', ['get', 'per_dem'], 0],
-                                ]
-                            ],
-                            0, '#002B84',  // colors from https://en.wikipedia.org/wiki/Wikipedia:WikiProject_Elections_and_Referendums/USA_legend_colors
-                                0.2, '#0645B4', 
-                                0.3, '#1666CB', 
-                                0.4, '#86B6F2', 
-                                0.5, '#B9D7FF', 
-                                0.55, '#800080',
-                                0.6, '#FFDFE1', 
-                                0.7, '#F2B3BE', 
-                                0.8, '#CC2F4A', 
-                                0.9, '#D40000', 
-                                1, '#FF0000',
+                                ['coalesce', ['get', 'per_dem'], 0],
+                            ]
                         ],
-                        'fill-outline-color': 'grey'
-                    }
+                        0, '#002B84',
+                        0.2, '#0645B4', 
+                        0.3, '#1666CB', 
+                        0.4, '#86B6F2', 
+                        0.5, '#B9D7FF', 
+                        0.55, '#800080',
+                        0.6, '#FFDFE1', 
+                        0.7, '#F2B3BE', 
+                        0.8, '#CC2F4A', 
+                        0.9, '#D40000', 
+                        1, '#FF0000',
+                    ],
+                    'fill-outline-color': 'grey'
+                }
             });
+
+            // Build county border lines from polygons for proper stroked highlights
+            fetch('swingstatedata.geojson')
+                .then(r => r.json())
+                .then(geo => {
+                    const borderFeatures = geo.features.map(f => {
+                        const line = turf.polygonToLine(f);
+                        // Ensure GEOID is preserved on the resulting line feature(s)
+                        if (line && line.properties) {
+                            line.properties.GEOID = f.properties && f.properties.GEOID;
+                        }
+                        return line;
+                    }).filter(Boolean);
+                    const borderFC = { type: 'FeatureCollection', features: borderFeatures };
+
+                    map.addSource('swing-county-borders', {
+                        type: 'geojson',
+                        data: borderFC,
+                        promoteId: 'GEOID'
+                    });
+
+                    // Base thin borders
+                    map.addLayer({
+                        id: 'county_borders_base',
+                        type: 'line',
+                        source: 'swing-county-borders',
+                        paint: {
+                            'line-color': 'grey',
+                            'line-width': 1,
+                            'line-opacity': 0.7
+                        }
+                    });
+
+                    // Highlight outline for hover/selected counties
+                    map.addLayer({
+                        id: 'county_highlight',
+                        type: 'line',
+                        source: 'swing-county-borders',
+                        paint: {
+                            'line-color': '#FFD400',
+                            'line-width': [
+                                'case',
+                                ['boolean', ['feature-state', 'selected'], false], 4,
+                                ['boolean', ['feature-state', 'hover'], false], 3,
+                                0
+                            ],
+                            'line-opacity': [
+                                'case',
+                                ['boolean', ['feature-state', 'selected'], false], 1,
+                                ['boolean', ['feature-state', 'hover'], false], 1,
+                                0
+                            ]
+                        }
+                    });
+                });
 
 
             
@@ -588,6 +689,102 @@
                         ],
                         'fill-outline-color': 'grey'
                     }
+            });
+
+            // Ensure the stroke highlight renders above all fills
+            try { map.moveLayer('county_highlight'); } catch(e) {}
+
+            // Interactions: hover and click popups for swing-state counties
+            const hoverPopup = new mapboxgl.Popup({
+                closeButton: false,
+                closeOnClick: false,
+                offset: 12
+            });
+
+            function formatNumber(n) {
+                if (typeof n !== 'number') return 'N/A';
+                return n.toLocaleString();
+            }
+
+            function formatPct(x) {
+                if (typeof x !== 'number') return 'N/A';
+                return (x * 100).toFixed(1) + '%';
+            }
+
+            function countyHTML(p) {
+                const total = typeof p.total_votes === 'number' ? p.total_votes : null;
+                const gop = typeof p.votes_gop === 'number' ? p.votes_gop : null;
+                const dem = typeof p.votes_dem === 'number' ? p.votes_dem : null;
+                const indVotes = (total != null && gop != null && dem != null) ? Math.max(total - gop - dem, 0) : null;
+
+                const perG = typeof p.per_gop === 'number' ? p.per_gop : null;
+                const perD = typeof p.per_dem === 'number' ? p.per_dem : null;
+                const perI = (perG != null && perD != null) ? Math.max(1 - (perG + perD), 0) : null;
+
+                const countyName = p.county_name || p.NAME || 'County';
+                const population = p.population || p.POPULATION || null; // dataset may not include
+
+                return `
+                    <div style="min-width:220px; font-family: var(--font-sans);">
+                        <div style="font-weight:600; margin-bottom:4px;">${countyName}</div>
+                        <div style="font-size:12px; line-height:1.4;">
+                            <div><strong>Population:</strong> ${population ? formatNumber(population) : 'N/A'}</div>
+                            <div><strong>Total votes:</strong> ${formatNumber(total)}</div>
+                            <div><strong>Dem votes:</strong> ${formatNumber(dem)} ${perD!=null?`(${formatPct(perD)})`:''}</div>
+                            <div><strong>GOP votes:</strong> ${formatNumber(gop)} ${perG!=null?`(${formatPct(perG)})`:''}</div>
+                            <div><strong>Independent:</strong> ${indVotes!=null?formatNumber(indVotes):'N/A'} ${perI!=null?`(${(perI*100).toFixed(1)}%)`:''}</div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            let hoveredId = null;
+            let selectedId = null;
+
+            map.on('mouseenter', 'county_results', () => {
+                map.getCanvas().style.cursor = 'pointer';
+            });
+            map.on('mouseleave', 'county_results', () => {
+                map.getCanvas().style.cursor = '';
+                hoverPopup.remove();
+                if (hoveredId !== null) {
+                    map.setFeatureState({ source: 'swing-county-borders', id: hoveredId }, { hover: false });
+                    hoveredId = null;
+                }
+            });
+            map.on('mousemove', 'county_results', (e) => {
+                const f = e.features && e.features[0];
+                if (!f) return;
+                const id = f.id || (f.properties && f.properties.GEOID);
+                if (id == null) return;
+                if (hoveredId !== id) {
+                    if (hoveredId !== null) {
+                        map.setFeatureState({ source: 'swing-county-borders', id: hoveredId }, { hover: false });
+                    }
+                    hoveredId = id;
+                    map.setFeatureState({ source: 'swing-county-borders', id: hoveredId }, { hover: true });
+                }
+                hoverPopup.setLngLat(e.lngLat).setHTML(countyHTML(f.properties || {})).addTo(map);
+            });
+            map.on('click', 'county_results', (e) => {
+                const f = e.features && e.features[0];
+                if (!f) return;
+                const id = f.id || (f.properties && f.properties.GEOID);
+                if (id == null) return;
+                if (selectedId !== null && selectedId !== id) {
+                    map.setFeatureState({ source: 'swing-county-borders', id: selectedId }, { selected: false });
+                }
+                const newSelected = selectedId === id ? null : id;
+                if (newSelected === null) {
+                    map.setFeatureState({ source: 'swing-county-borders', id: id }, { selected: false });
+                } else {
+                    map.setFeatureState({ source: 'swing-county-borders', id: id }, { selected: true });
+                }
+                selectedId = newSelected;
+                new mapboxgl.Popup({ closeButton: true, offset: 12 })
+                    .setLngLat(e.lngLat)
+                    .setHTML(countyHTML(f.properties || {}))
+                    .addTo(map);
             });
 
             
