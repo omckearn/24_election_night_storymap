@@ -41,15 +41,35 @@
             position: fixed;
             right: 10px;
             z-index: 1000;
+            pointer-events: none; /* do not block map hover */
         }
-        .legend h4 {margin: 0 0 10px;}
-        .legend div span {
-            border-radius: 50%;
-            display: inline-block;
-            height: 10px;
-            margin-right: 5px;
-            width: 10px;
+        .legend h4 {margin: 0 0 8px;}
+        .legend .gradient-wrap { width: 220px; }
+        .legend .gradient-bar {
+            width: 100%;
+            height: 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(0,0,0,0.15);
+            background: linear-gradient(to right,
+                #00308a 0%,
+                #0b4fb3 20%,
+                #3a84df 35%,
+                #7fb6ff 45%,
+                #800080 50%,
+                #f3b8c3 60%,
+                #d3586d 75%,
+                #cc2f4a 88%,
+                #b20020 100%
+            );
         }
+        .legend .ticks {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 6px;
+            font-size: 11px;
+            opacity: 0.9;
+        }
+        .legend .ticks span { flex: 1; text-align: center; }
 
         a,
         a:hover,
@@ -179,8 +199,15 @@
             font-size: 13px;
         }
 
-        .step img {
-            width: 100%;
+        .pie {
+            width: 140px;
+            height: 140px;
+            aspect-ratio: 1 / 1;
+            border-radius: 50%;
+            border: 1px solid rgba(255,255,255,0.6);
+            box-shadow: inset 0 0 0 1px rgba(0,0,0,0.25);
+            display: block;
+            flex: 0 0 140px; /* prevent flex stretch/shrink */
         }
 
         @media (max-width: 750px) {
@@ -207,17 +234,16 @@
         <div id="map"></div>
         <nav id="state-menu" class="menu-bar" aria-label="State navigation"></nav>
         <div class="legend" id="pop-legend">
-            <h4>Legend</h4>
-            <div><span style="background-color: #0645B4"></span>>75% Democrat</div>
-            <div><span style="background-color: #1666CB"></span>60-65% Democrat</div>
-            <div><span style="background-color: #86B6F2"></span>55-60% Democrat</div>
-        <div><span style="background-color: #B9D7FF"></span>50-55% Democrat</div>
-        <div><span style="background-color: #800080"></span>50% Democrat, 50% Republican</div>
-        <div><span style="background-color: #FFDFE1"></span>50-55% Republican</div>
-        <div><span style="background-color: #F2B3BE"></span>55-60% Republican</div>
-        <div><span style="background-color: #CC2F4A"></span>60-75% Republican</div>
-        <div><span style="background-color: #D40000"></span>>75% Republican</div>
-    </div>
+            <h4>Vote Lean</h4>
+            <div class="gradient-wrap">
+                <div class="gradient-bar" aria-label="Democrat to Republican gradient"></div>
+                <div class="ticks">
+                    <span>More Dem</span>
+                    <span>50/50</span>
+                    <span>More GOP</span>
+                </div>
+            </div>
+        </div>
     <div id="story"
     
     
@@ -291,44 +317,125 @@
             story.appendChild(header);
         }
 
-        config.chapters.forEach((record, idx) => {
-            var container = document.createElement('div');
-            var chapter = document.createElement('div');
+        // Build chapters after loading state results and replacing images with state graphics (waffle chart)
+        function buildChaptersWithCharts(stateTotals) {
+            config.chapters.forEach((record, idx) => {
+                var container = document.createElement('div');
+                var chapter = document.createElement('div');
 
-            if (record.title) {
-                var title = document.createElement('h3');
-                title.innerText = record.title;
-                chapter.appendChild(title);
+                // Derive state code from chapter id prefix (e.g., OHChoro, AZDot)
+                var stateCode = (record.id || '').slice(0, 2).toUpperCase();
+                var codeToName = {
+                    AZ: 'Arizona',
+                    GA: 'Georgia',
+                    MI: 'Michigan',
+                    NC: 'North Carolina',
+                    NV: 'Nevada',
+                    OH: 'Ohio',
+                    PA: 'Pennsylvania',
+                    WI: 'Wisconsin'
+                };
+
+                // Add state name heading above the chapter's title (date/time)
+                if (codeToName[stateCode]) {
+                    var stateHeader = document.createElement('h2');
+                    stateHeader.innerText = codeToName[stateCode];
+                    chapter.appendChild(stateHeader);
+                }
+
+                if (record.title) {
+                    var title = document.createElement('h3');
+                    title.innerText = record.title;
+                    chapter.appendChild(title);
+                }
+
+                // Replace images with a waffle chart (10x10 grid) of state results
+                // Use totals derived from swingstatedata.geojson (DEM vs GOP)
+                var totals = stateTotals[stateCode];
+                if (totals) {
+                    var wrap = document.createElement('div');
+                    wrap.style.display = 'flex';
+                    wrap.style.alignItems = 'center';
+                    wrap.style.gap = '12px';
+                    wrap.style.margin = '8px 0 4px 0';
+
+                    var demShare = totals.dem / Math.max(1, (totals.dem + totals.gop));
+                    var gopShare = 1 - demShare;
+                    var demAngle = (demShare * 360).toFixed(1);
+
+                    var pie = document.createElement('div');
+                    pie.className = 'pie';
+                    pie.style.background = `conic-gradient(#1666CB 0deg ${demAngle}deg, #CC2F4A ${demAngle}deg 360deg)`;
+
+                    var legend = document.createElement('div');
+                    legend.style.fontSize = '13px';
+                    legend.style.lineHeight = '18px';
+                    var demPct = (demShare * 100).toFixed(1);
+                    var gopPct = (gopShare * 100).toFixed(1);
+                    legend.innerHTML = `
+                        <div><span style="display:inline-block;width:10px;height:10px;background:#1666CB;border-radius:2px;margin-right:6px"></span>Democrat ${demPct}%</div>
+                        <div><span style="display:inline-block;width:10px;height:10px;background:#CC2F4A;border-radius:2px;margin-right:6px"></span>Republican ${gopPct}%</div>
+                    `;
+
+                    wrap.appendChild(pie);
+                    wrap.appendChild(legend);
+                    chapter.appendChild(wrap);
+                }
+
+                if (record.description) {
+                    var desc = document.createElement('p');
+                    desc.innerHTML = record.description;
+                    chapter.appendChild(desc);
+                }
+
+                container.setAttribute('id', record.id);
+                container.classList.add('step');
+                if (idx === 0) {
+                    container.classList.add('active');
+                }
+
+                chapter.classList.add(config.theme);
+                container.appendChild(chapter);
+                container.classList.add(alignments[record.alignment] || 'centered');
+                if (record.hidden) {
+                    container.classList.add('hidden');
+                }
+                features.appendChild(container);
+            });
+
+            story.appendChild(features);
+
+            // Signal that chapters are built so the footer can be appended afterward
+            if (typeof document !== 'undefined' && document && typeof CustomEvent !== 'undefined') {
+                document.dispatchEvent(new CustomEvent('chapters-built'));
             }
+        }
 
-            if (record.image) {
-                var image = new Image();
-                image.src = record.image;
-                chapter.appendChild(image);
-            }
-
-            if (record.description) {
-                var story = document.createElement('p');
-                story.innerHTML = record.description;
-                chapter.appendChild(story);
-            }
-
-            container.setAttribute('id', record.id);
-            container.classList.add('step');
-            if (idx === 0) {
-                container.classList.add('active');
-            }
-
-            chapter.classList.add(config.theme);
-            container.appendChild(chapter);
-            container.classList.add(alignments[record.alignment] || 'centered');
-            if (record.hidden) {
-                container.classList.add('hidden');
-            }
-            features.appendChild(container);
-        });
-
-        story.appendChild(features);
+        // Load county results and aggregate to state totals, then build chapters
+        (function initChapters() {
+            const fipsToCode = { '4':'AZ','04':'AZ','13':'GA','26':'MI','32':'NV','37':'NC','39':'OH','42':'PA','55':'WI' };
+            fetch('swingstatedata.geojson')
+                .then(r => r.json())
+                .then(geo => {
+                    const totals = {};
+                    geo.features.forEach(f => {
+                        const p = (f && f.properties) || {};
+                        const stateKey = String(p.STATEFP);
+                        const code = fipsToCode[stateKey] || null;
+                        if (!code) return;
+                        const g = Number(p.votes_gop) || 0;
+                        const d = Number(p.votes_dem) || 0;
+                        if (!totals[code]) totals[code] = { gop: 0, dem: 0 };
+                        totals[code].gop += g;
+                        totals[code].dem += d;
+                    });
+                    buildChaptersWithCharts(totals);
+                })
+                .catch(() => {
+                    // Fallback: build chapters without charts if data fails to load
+                    buildChaptersWithCharts({});
+                });
+        })();
 
         // Helper to programmatically activate a chapter without scrolling the story
         function activateChapter(chapter) {
@@ -370,10 +477,9 @@
             };
             var added = new Set();
             config.chapters.forEach(function(ch) {
-                if (!ch || !ch.id || !ch.image) return;
+                if (!ch || !ch.id) return;
                 if (!/Choro$/.test(ch.id)) return; // use the first chapter for each state
-                var img = ch.image.split('/').pop();
-                var code = (img.split('.')[0] || '').toUpperCase();
+                var code = (ch.id.slice(0,2) || '').toUpperCase();
                 if (!code || added.has(code)) return;
                 added.add(code);
                 var label = codeToName[code] || code;
@@ -393,17 +499,23 @@
         })();
 
         var footer = document.createElement('div');
-
         if (config.footer) {
             var footerText = document.createElement('p');
             footerText.innerHTML = config.footer;
             footer.appendChild(footerText);
         }
-
         if (footer.innerText.length > 0) {
             footer.classList.add(config.theme);
             footer.setAttribute('id', 'footer');
-            story.appendChild(footer);
+            // Append after chapters are created
+            document.addEventListener('chapters-built', function () {
+                // Remove any existing instance and append at the end
+                var existingFooter = document.getElementById('footer');
+                if (existingFooter && existingFooter.parentElement) {
+                    existingFooter.parentElement.removeChild(existingFooter);
+                }
+                story.appendChild(footer);
+            });
         }
 
         mapboxgl.accessToken = 'pk.eyJ1Ijoib21ja2Vhcm51dyIsImEiOiJjbTFqamRqeWcxMWF6MnJwc2RkdjBqdHoxIn0.E5gopEUreChvdj15aNY6_g';
@@ -604,14 +716,26 @@
             fetch('swingstatedata.geojson')
                 .then(r => r.json())
                 .then(geo => {
-                    const borderFeatures = geo.features.map(f => {
-                        const line = turf.polygonToLine(f);
-                        // Ensure GEOID is preserved on the resulting line feature(s)
-                        if (line && line.properties) {
-                            line.properties.GEOID = f.properties && f.properties.GEOID;
+                    const borderFeatures = [];
+                    geo.features.forEach(f => {
+                        const out = turf.polygonToLine(f);
+                        if (!out) return;
+                        const attach = (feat) => {
+                            if (!feat || feat.type !== 'Feature') return;
+                            feat.properties = feat.properties || {};
+                            const gid = f.properties && f.properties.GEOID;
+                            if (gid != null) {
+                                feat.properties.GEOID = gid;
+                                feat.id = gid; // ensure feature-state id matches
+                            }
+                            borderFeatures.push(feat);
+                        };
+                        if (out.type === 'FeatureCollection' && Array.isArray(out.features)) {
+                            out.features.forEach(attach);
+                        } else {
+                            attach(out);
                         }
-                        return line;
-                    }).filter(Boolean);
+                    });
                     const borderFC = { type: 'FeatureCollection', features: borderFeatures };
 
                     map.addSource('swing-county-borders', {

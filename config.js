@@ -13,7 +13,7 @@ var config = {
     auto: false,
     title: 'Mapping the 2024 Presidential Election Through Swing States',
     byline: 'By Owen McKearn and Wilson Boudreaux',
-    footer: 'Sources: Election Data: https://www.foxnews.com/elections/2024/general-results <br>Images: https://apnews.com/projects/election-results-2024/?office=P<br>Created using <a href="https://github.com/mapbox/storytelling" target="_blank">Mapbox Storytelling</a> template.',
+    footer: 'Source: Associated Press — <a href="https://apnews.com/hub/election-2024" target="_blank" rel="noopener noreferrer">apnews.com/hub/election-2024</a>',
     chapters: [
         {
             id: 'OHChoro',
