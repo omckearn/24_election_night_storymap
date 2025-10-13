@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset='utf-8' />
+    <title>Mapbox Storytelling</title>
+    <meta name='viewport' content='initial-scale=1,maximum-scale=1,user-scalable=no' />
+    <link rel="icon" type="image/x-icon"
+        href="https://raw.githubusercontent.com/mapbox/assembly/publisher-staging/src/svgs/mapbox.svg">
+    <script src='https://api.tiles.mapbox.com/mapbox-gl-js/v3.8.0/mapbox-gl.js'></script>
+    <link href='https://api.tiles.mapbox.com/mapbox-gl-js/v3.8.0/mapbox-gl.css' rel='stylesheet' />
+    <script src="https://cdn.jsdelivr.net/npm/mapbox-gl-globe-minimap@1.2.0/dist/bundle.js"></script>
+    <script src="https://unpkg.com/@turf/turf/turf.min.js"></script> 
+    <script src="https://unpkg.com/scrollama"></script>
+    <style>
+        :root {
+            --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: var(--font-sans);
+        }
+
+        #legend-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 100; /* Ensure it's above other elements */
+        }
+
+        .legend {
+            background-color: #fff;
+            border-radius: 3px;
+            bottom: 20px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+            font-family: var(--font-sans);
+            font-size: 12px;
+            line-height: 20px;
+            padding: 10px;
+            position: fixed;
+            right: 10px;
+            z-index: 1000;
+        }
+        .legend h4 {margin: 0 0 10px;}
+        .legend div span {
+            border-radius: 50%;
+            display: inline-block;
+            height: 10px;
+            margin-right: 5px;
+            width: 10px;
+        }
+
+        a,
+        a:hover,
+        a:visited {
+            color: #0071bc;
+        }
+
+        #map {
+            top: 0;
+            height: 100vh;
+            width: 100vw;
+            position: fixed;
+        }
+
+        /* Top state menu */
+        .menu-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 44px;
+            display: flex;
+            align-items: center;
+            padding: 0 8px;
+            gap: 8px;
+            overflow-x: auto;
+            background: rgba(0, 0, 0, 0.55);
+            backdrop-filter: blur(6px);
+            z-index: 1002;
+        }
+        .menu-item {
+            font-family: var(--font-sans);
+            font-size: 13px;
+            color: #fff;
+            background: transparent;
+            border: 1px solid rgba(255,255,255,0.25);
+            border-radius: 6px;
+            padding: 6px 10px;
+            white-space: nowrap;
+            cursor: pointer;
+        }
+        .menu-item:hover { background: rgba(255,255,255,0.12); }
+
+        #header {
+            margin: auto;
+            width: 100%;
+            position: relative;
+            z-index: 5;
+        }
+
+        #header h1,
+        #header h2,
+        #header p {
+            margin: 0;
+            padding: 2vh 2vw;
+            text-align: center;
+        }
+
+        #footer {
+            width: 100%;
+            min-height: 5vh;
+            padding-top: 2vh;
+            padding-bottom: 2vh;
+            text-align: center;
+            line-height: 25px;
+            font-size: 13px;
+            position: relative;
+            z-index: 5;
+        }
+
+        #features {
+            padding-top: 10vh;
+            padding-bottom: 10vh;
+        }
+
+        .hidden {
+            visibility: hidden;
+        }
+
+        .centered {
+            width: 50vw;
+            margin: 0 auto;
+        }
+
+        .lefty {
+            width: 33vw;
+            margin-left: 5vw;
+        }
+
+        .righty {
+            width: 33vw;
+            margin-left: 62vw;
+        }
+
+        .fully {
+            width: 100%;
+            margin: auto;
+        }
+
+        .light {
+            color: #444;
+            background-color: #fafafa;
+        }
+
+        .dark {
+            color: #fafafa;
+            background-color: #444;
+        }
+
+        .step {
+            padding-bottom: 50vh;
+            /* margin-bottom: 10vh; */
+            opacity: 0.25;
+        }
+
+        .step.active {
+            opacity: 0.9;
+        }
+
+        .step div {
+            padding: 25px 50px;
+            line-height: 25px;
+            font-size: 13px;
+        }
+
+        .step img {
+            width: 100%;
+        }
+
+        @media (max-width: 750px) {
+
+            .centered,
+            .lefty,
+            .righty,
+            .fully {
+                width: 90vw;
+                margin: 0 auto;
+            }
+        }
+
+        /* Fix issue on mobile browser where scroll breaks  */
+        .mapboxgl-canvas-container.mapboxgl-touch-zoom-rotate.mapboxgl-touch-drag-pan,
+        .mapboxgl-canvas-container.mapboxgl-touch-zoom-rotate.mapboxgl-touch-drag-pan .mapboxgl-canvas {
+            touch-action: unset;
+        }
+    </style>
+</head>
+    
+    <body>
+
+        <div id="map"></div>
+        <nav id="state-menu" class="menu-bar" aria-label="State navigation"></nav>
+        <div class="legend" id="pop-legend">
+            <h4>Legend</h4>
+            <div><span style="background-color: #0645B4"></span>>75% Democrat</div>
+            <div><span style="background-color: #1666CB"></span>60-65% Democrat</div>
+            <div><span style="background-color: #86B6F2"></span>55-60% Democrat</div>
+        <div><span style="background-color: #B9D7FF"></span>50-55% Democrat</div>
+        <div><span style="background-color: #800080"></span>50% Democrat, 50% Republican</div>
+        <div><span style="background-color: #FFDFE1"></span>50-55% Republican</div>
+        <div><span style="background-color: #F2B3BE"></span>55-60% Republican</div>
+        <div><span style="background-color: #CC2F4A"></span>60-75% Republican</div>
+        <div><span style="background-color: #D40000"></span>>75% Republican</div>
+    </div>
+    <div id="story"
+    
+    
+    ></div>
+
+    <script src="./config.js"></script>
+    <script>
+        var initLoad = true;
+        var layerTypes = {
+            'fill': ['fill-opacity'],
+            'line': ['line-opacity'],
+            'circle': ['circle-opacity', 'circle-stroke-opacity'],
+            'symbol': ['icon-opacity', 'text-opacity'],
+            'raster': ['raster-opacity'],
+            'fill-extrusion': ['fill-extrusion-opacity'],
+            'heatmap': ['heatmap-opacity']
+        }
+
+        var alignments = {
+            'left': 'lefty',
+            'center': 'centered',
+            'right': 'righty',
+            'full': 'fully'
+        }
+
+        function getLayerPaintType(layer) {
+            var layerType = map.getLayer(layer).type;
+            return layerTypes[layerType];
+        }
+
+        function setLayerOpacity(layer) {
+            var paintProps = getLayerPaintType(layer.layer);
+            paintProps.forEach(function (prop) {
+                var options = {};
+                if (layer.duration) {
+                    var transitionProp = prop + "-transition";
+                    options = { "duration": layer.duration };
+                    map.setPaintProperty(layer.layer, transitionProp, options);
+                }
+                map.setPaintProperty(layer.layer, prop, layer.opacity, options);
+            });
+        }
+
+        var story = document.getElementById('story');
+        var features = document.createElement('div');
+        features.setAttribute('id', 'features');
+
+        var header = document.createElement('div');
+
+        if (config.title) {
+            var titleText = document.createElement('h1');
+            titleText.innerText = config.title;
+            header.appendChild(titleText);
+        }
+
+        if (config.subtitle) {
+            var subtitleText = document.createElement('h2');
+            subtitleText.innerText = config.subtitle;
+            header.appendChild(subtitleText);
+        }
+
+        if (config.byline) {
+            var bylineText = document.createElement('p');
+            bylineText.innerText = config.byline;
+            header.appendChild(bylineText);
+        }
+
+        if (header.innerText.length > 0) {
+            header.classList.add(config.theme);
+            header.setAttribute('id', 'header');
+            story.appendChild(header);
+        }
+
+        config.chapters.forEach((record, idx) => {
+            var container = document.createElement('div');
+            var chapter = document.createElement('div');
+
+            if (record.title) {
+                var title = document.createElement('h3');
+                title.innerText = record.title;
+                chapter.appendChild(title);
+            }
+
+            if (record.image) {
+                var image = new Image();
+                image.src = record.image;
+                chapter.appendChild(image);
+            }
+
+            if (record.description) {
+                var story = document.createElement('p');
+                story.innerHTML = record.description;
+                chapter.appendChild(story);
+            }
+
+            container.setAttribute('id', record.id);
+            container.classList.add('step');
+            if (idx === 0) {
+                container.classList.add('active');
+            }
+
+            chapter.classList.add(config.theme);
+            container.appendChild(chapter);
+            container.classList.add(alignments[record.alignment] || 'centered');
+            if (record.hidden) {
+                container.classList.add('hidden');
+            }
+            features.appendChild(container);
+        });
+
+        story.appendChild(features);
+
+        // Build state menu from chapters that represent states (e.g., *Choro chapters)
+        (function buildStateMenu() {
+            var menu = document.getElementById('state-menu');
+            if (!menu) return;
+            var codeToName = {
+                AZ: 'Arizona',
+                GA: 'Georgia',
+                MI: 'Michigan',
+                NC: 'North Carolina',
+                NV: 'Nevada',
+                OH: 'Ohio',
+                PA: 'Pennsylvania',
+                WI: 'Wisconsin'
+            };
+            var added = new Set();
+            config.chapters.forEach(function(ch) {
+                if (!ch || !ch.id || !ch.image) return;
+                if (!/Choro$/.test(ch.id)) return; // use the first chapter for each state
+                var img = ch.image.split('/').pop();
+                var code = (img.split('.')[0] || '').toUpperCase();
+                if (!code || added.has(code)) return;
+                added.add(code);
+                var label = codeToName[code] || code;
+                var btn = document.createElement('button');
+                btn.className = 'menu-item';
+                btn.type = 'button';
+                btn.textContent = label;
+                btn.addEventListener('click', function() {
+                    var el = document.getElementById(ch.id);
+                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                });
+                menu.appendChild(btn);
+            });
+        })();
+
+        var footer = document.createElement('div');
+
+        if (config.footer) {
+            var footerText = document.createElement('p');
+            footerText.innerHTML = config.footer;
+            footer.appendChild(footerText);
+        }
+
+        if (footer.innerText.length > 0) {
+            footer.classList.add(config.theme);
+            footer.setAttribute('id', 'footer');
+            story.appendChild(footer);
+        }
+
+        mapboxgl.accessToken = 'pk.eyJ1Ijoib21ja2Vhcm51dyIsImEiOiJjbTFqamRqeWcxMWF6MnJwc2RkdjBqdHoxIn0.E5gopEUreChvdj15aNY6_g';
+
+        var map = new mapboxgl.Map({
+            container: 'map',
+            style: config.style,
+            center: config.chapters[0].location.center,
+            zoom: config.chapters[0].location.zoom,
+            bearing: config.chapters[0].location.bearing,
+            pitch: config.chapters[0].location.pitch,
+            interactive: false,
+            projection: config.projection
+        });
+
+        // Create a inset map if enabled in config.js
+        if (config.inset) {
+            map.addControl(
+                new GlobeMinimap({ ...config.insetOptions }),
+                config.insetPosition
+            );
+        }
+
+        if (config.showMarkers) {
+            var marker = new mapboxgl.Marker({ color: config.markerColor });
+            marker.setLngLat(config.chapters[0].location.center).addTo(map);
+        }
+
+        // instantiate the scrollama
+        var scroller = scrollama();
+
+
+        // List of selected swing state fips codes
+        const selectedStateNumbers = [
+            '13', // Georgia
+            '37', // North Carolina
+            '42', // Pennsylvania
+            '55', // Wisconsin
+            '39', // Ohio
+            '26', // Michigan
+            '32', // Nevada
+            '4'   // Arizona
+        ];
+
+        map.on("load", function () {
+
+
+            fetch('merged_election_results.geojson')
+                .then(response => response.json())
+                .then((data) => {
+                    
+                    // Filter the data to include selected swing states
+                    const filteredData = data.features.filter(feature =>
+                        selectedStateNumbers.includes(feature.properties.state_name)
+                    );
+
+                    // Add county borders layer for selected states
+                    map.addSource('county-borders', {
+                        type: 'geojson',
+                        data: { type: 'FeatureCollection', features: filteredData }
+                    });
+
+
+
+                    // Add line layer for county borders in swing states
+                    map.addLayer({
+                        id: 'county-lines',
+                        type: 'line',
+                        source: 'county-borders',
+                        paint: {
+                            'line-color': 'black', 
+                            'line-width': 5
+                        }
+                    });
+
+                    const stateCentroids = {
+                        type: 'FeatureCollection',
+                        features: filteredData.map(feature => {
+                            const state = feature.properties.state_name; 
+                            const votes = feature.properties.total_votes || 0; 
+                            const gopPercent = feature.properties.per_gop || 0; // GOP percentage
+                            const demPercent = feature.properties.per_dem || 0; // dem percentage
+
+                            const per_gop = gopPercent / (gopPercent + demPercent); // recalculate percent to get rid of third party
+
+
+                            // find centroid
+                            const centroid = turf.centroid(feature);
+
+                            // Create a new feature with centroid geometry and properties
+                            return {
+                                type: 'Feature',
+                                geometry: centroid.geometry,
+                                properties: {
+                                    state: state,
+                                    total_votes: votes,
+                                    per_gop: per_gop
+                                }
+                            };
+                        })
+                    };
+
+                    map.addSource('state-centroids', {
+                        type: 'geojson',
+                        data: stateCentroids
+                    });
+
+                    // Add circle layer for centroids
+                    map.addLayer({
+                        id: 'circle-layer',
+                        type: 'circle',
+                        source: 'state-centroids',
+                        paint: {
+                            // Circle size based on total_votes
+                            'circle-radius': [
+                                'interpolate',
+                                ['linear'],
+                                ['get', 'total_votes'],
+                                1000, 12,    
+                                1000000, 60 
+                            ],
+                            // Circle color based on per_gop
+                            'circle-color': [
+                                'interpolate',
+                                ['linear'],
+                                ['get', 'per_gop'],
+                                0, '#002B84',  // colors from https://en.wikipedia.org/wiki/Wikipedia:WikiProject_Elections_and_Referendums/USA_legend_colors
+                                0.2, '#0645B4', 
+                                0.3, '#1666CB', 
+                                0.4, '#86B6F2', 
+                                0.5, '#B9D7FF', 
+                                0.55, '#800080',
+                                0.6, '#FFDFE1', 
+                                0.7, '#F2B3BE', 
+                                0.8, '#CC2F4A', 
+                                0.9, '#D40000', 
+                                1, '#FF0000',   // red 
+                            ],
+                            'circle-opacity': 1,
+                            'circle-stroke-width': 1.5,
+                            'circle-stroke-color': '#FFFFFF'
+                        }
+                    });
+                })
+
+
+                
+
+            map.addLayer({
+                id: 'county_results',
+                type: 'fill',
+                'source':  {type: 'geojson',
+                    data: 'swingStateData.geojson'
+                    },                        
+                    paint: {
+                        'fill-color': [
+                            'interpolate',
+                            ['linear'],
+                            ['/', 
+                                ['coalesce', ['get', 'per_gop'], 0],  
+                                ['+', 
+                                    ['coalesce', ['get', 'per_gop'], 0],  
+                                    ['coalesce', ['get', 'per_dem'], 0],
+                                ]
+                            ],
+                            0, '#002B84',  // colors from https://en.wikipedia.org/wiki/Wikipedia:WikiProject_Elections_and_Referendums/USA_legend_colors
+                                0.2, '#0645B4', 
+                                0.3, '#1666CB', 
+                                0.4, '#86B6F2', 
+                                0.5, '#B9D7FF', 
+                                0.55, '#800080',
+                                0.6, '#FFDFE1', 
+                                0.7, '#F2B3BE', 
+                                0.8, '#CC2F4A', 
+                                0.9, '#D40000', 
+                                1, '#FF0000',
+                        ],
+                        'fill-outline-color': 'grey'
+                    }
+            });
+
+
+            
+
+            map.addLayer({
+                id: 'national_results',
+                type: 'fill',
+                'source':  {type: 'geojson',
+                    data: 'merged_election_results.geojson'
+                    },                        
+                    paint: {
+                        'fill-color': [
+                            'interpolate',
+                            ['linear'],
+                            ['/', 
+                                ['coalesce', ['get', 'per_gop'], 0],  // Default per_gop to 0 if missing
+                                ['+', 
+                                    ['coalesce', ['get', 'per_gop'], 0],  // Default per_gop to 0 if missing
+                                    ['coalesce', ['get', 'per_dem'], 0],
+                                ]
+                            ],
+                            0, '#002B84',  // colors from https://en.wikipedia.org/wiki/Wikipedia:WikiProject_Elections_and_Referendums/USA_legend_colors
+                                0.2, '#0645B4', 
+                                0.3, '#1666CB', 
+                                0.4, '#86B6F2', 
+                                0.5, '#B9D7FF', 
+                                0.55, '#800080',
+                                0.6, '#FFDFE1', 
+                                0.7, '#F2B3BE', 
+                                0.8, '#CC2F4A', 
+                                0.9, '#D40000', 
+                                1, '#FF0000',
+                        ],
+                        'fill-outline-color': 'grey'
+                    }
+            });
+
+            
+            
+
+            scroller
+                .setup({
+                    step: '.step',
+                    offset: 0.5,
+                    progress: true
+                })
+                .onStepEnter(async response => {
+                    var current_chapter = config.chapters.findIndex(chap => chap.id === response.element.id);
+                    var chapter = config.chapters[current_chapter];
+
+                    response.element.classList.add('active');
+                    map[chapter.mapAnimation || 'flyTo'](chapter.location);
+
+                    if (config.showMarkers) {
+                        marker.setLngLat(chapter.location.center);
+                    }
+                    if (chapter.onChapterEnter.length > 0) {
+                        chapter.onChapterEnter.forEach(setLayerOpacity);
+                    }
+                    if (chapter.callback) {
+                        window[chapter.callback]();
+                    }
+                    if (chapter.rotateAnimation) {
+                        map.once('moveend', () => {
+                            const rotateNumber = map.getBearing();
+                            map.rotateTo(rotateNumber + 180, {
+                                duration: 30000, easing: function (t) {
+                                    return t;
+                                }
+                            });
+                        });
+                    }
+                    if (config.auto) {
+                        var next_chapter = (current_chapter + 1) % config.chapters.length;
+                        map.once('moveend', () => {
+                            document.querySelectorAll('[data-scrollama-index="' + next_chapter.toString() + '"]')[0].scrollIntoView();
+                        });
+                    }
+                })
+                .onStepExit(response => {
+                    var chapter = config.chapters.find(chap => chap.id === response.element.id);
+                    response.element.classList.remove('active');
+                    if (chapter.onChapterExit.length > 0) {
+                        chapter.onChapterExit.forEach(setLayerOpacity);
+                    }
+                });
+
+
+            if (config.auto) {
+                document.querySelectorAll('[data-scrollama-index="0"]')[0].scrollIntoView();
+            }
+        });    
+
+    </script>
+
+</body>
+
+</html>
