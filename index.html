@@ -846,13 +846,11 @@
                 const perI = (perG != null && perD != null) ? Math.max(1 - (perG + perD), 0) : null;
 
                 const countyName = p.county_name || p.NAME || 'County';
-                const population = p.population || p.POPULATION || null; // dataset may not include
 
                 return `
                     <div style="min-width:220px; font-family: var(--font-sans);">
                         <div style="font-weight:600; margin-bottom:4px;">${countyName}</div>
                         <div style="font-size:12px; line-height:1.4;">
-                            <div><strong>Population:</strong> ${population ? formatNumber(population) : 'N/A'}</div>
                             <div><strong>Total votes:</strong> ${formatNumber(total)}</div>
                             <div><strong>Dem votes:</strong> ${formatNumber(dem)} ${perD!=null?`(${formatPct(perD)})`:''}</div>
                             <div><strong>GOP votes:</strong> ${formatNumber(gop)} ${perG!=null?`(${formatPct(perG)})`:''}</div>
