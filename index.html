@@ -199,15 +199,40 @@
             font-size: 13px;
         }
 
-        .pie {
-            width: 140px;
-            height: 140px;
-            aspect-ratio: 1 / 1;
-            border-radius: 50%;
-            border: 1px solid rgba(255,255,255,0.6);
-            box-shadow: inset 0 0 0 1px rgba(0,0,0,0.25);
-            display: block;
-            flex: 0 0 140px; /* prevent flex stretch/shrink */
+        /* Horizontal share bar (replacement for pie) */
+        .share-bar {
+            position: relative;
+            display: flex;
+            height: 22px;
+            border-radius: 6px;
+            overflow: hidden;
+            border: 1px solid rgba(0,0,0,0.15);
+            box-shadow: inset 0 0 0 1px rgba(0,0,0,0.06);
+            /* Responsive width: at least 220px, grow but cap for readability */
+            width: min(100%, 460px);
+            min-width: 220px;
+            background: #f5f7fb;
+        }
+        .share-seg {
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.2px;
+            white-space: nowrap;
+            padding: 0 6px; /* ensure some breathing room for labels */
+        }
+        .share-dem { background: #1666CB; }
+        .share-gop { background: #CC2F4A; }
+        .share-legend { font-size: 13px; line-height: 18px; }
+        .share-key {
+            display: inline-block;
+            width: 10px; height: 10px;
+            border-radius: 2px;
+            margin-right: 6px;
         }
 
         @media (max-width: 750px) {
@@ -225,6 +250,25 @@
         .mapboxgl-canvas-container.mapboxgl-touch-zoom-rotate.mapboxgl-touch-drag-pan,
         .mapboxgl-canvas-container.mapboxgl-touch-zoom-rotate.mapboxgl-touch-drag-pan .mapboxgl-canvas {
             touch-action: unset;
+        }
+
+        /* Statewide chart refined layout */
+        .state-chart{display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;pointer-events:none}
+        .state-chart>*{pointer-events:auto}
+        .state-chart .chart-labels{display:flex;justify-content:space-between;align-items:center;width:clamp(260px,38vw,340px);margin-bottom:8px}
+        .state-chart .lab{font-weight:600;font-size:16px}
+        .state-chart .lab.dem{color:#1666CB}
+        .state-chart .lab.gop{color:#CC2F4A}
+        .state-chart .chart-bar{position:relative;width:clamp(260px,38vw,340px);height:36px;border-radius:18px;background:rgba(255,255,255,0.12);box-shadow:inset 0 1px 2px rgba(0,0,0,0.35);overflow:hidden}
+        .state-chart .seg{height:100%}
+        .state-chart .seg.dem{float:left;background:#1666CB}
+        .state-chart .seg.gop{float:right;background:#CC2F4A}
+        .state-chart .midline{position:absolute;left:50%;top:15%;width:2px;height:70%;background:rgba(255,255,255,0.6)}
+        .state-chart .chart-caption{margin-top:8px;font-size:12px;opacity:.7;text-align:center;width:clamp(260px,38vw,340px)}
+
+        @media (max-width:750px){
+          .state-chart .lab{font-size:14px}
+          .state-chart .chart-bar{height:30px}
         }
     </style>
 </head>
@@ -349,36 +393,65 @@
                     chapter.appendChild(title);
                 }
 
-                // Replace images with a waffle chart (10x10 grid) of state results
+                // Build two-row chart figure and remove tooltip-style popups
                 // Use totals derived from swingstatedata.geojson (DEM vs GOP)
                 var totals = stateTotals[stateCode];
                 if (totals) {
+                    var demShare = totals.dem / Math.max(1, (totals.dem + totals.gop));
+                    var gopShare = 1 - demShare;
+                    var demPct = (demShare * 100);
+                    var gopPct = (gopShare * 100);
+
+                    var stateName = (codeToName[stateCode] || stateCode || '').toString();
+
+                    var figure = document.createElement('figure');
+                    figure.className = 'state-chart';
+                    figure.setAttribute('aria-label', `${stateName} statewide results: Democrat ${demPct.toFixed(1)} percent, Republican ${gopPct.toFixed(1)} percent`);
+
+                    // Labels row
+                    var labels = document.createElement('div');
+                    labels.className = 'chart-labels';
+                    var labDem = document.createElement('span');
+                    labDem.className = 'lab dem';
+                    labDem.textContent = `Democrat ${demPct.toFixed(1)}%`;
+                    var labGop = document.createElement('span');
+                    labGop.className = 'lab gop';
+                    labGop.textContent = `Republican ${gopPct.toFixed(1)}%`;
+                    labels.appendChild(labDem);
+                    labels.appendChild(labGop);
+
+                    // Bar row
+                    var bar = document.createElement('div');
+                    bar.className = 'chart-bar';
+                    var segDem = document.createElement('div');
+                    segDem.className = 'seg dem';
+                    segDem.style.width = demPct.toFixed(3) + '%';
+                    var segGop = document.createElement('div');
+                    segGop.className = 'seg gop';
+                    segGop.style.width = gopPct.toFixed(3) + '%';
+                    var midline = document.createElement('div');
+                    midline.className = 'midline';
+                    midline.setAttribute('aria-hidden', 'true');
+                    bar.appendChild(segDem);
+                    bar.appendChild(segGop);
+                    bar.appendChild(midline);
+
+                    // Caption row
+                    var caption = document.createElement('figcaption');
+                    caption.className = 'chart-caption';
+                    caption.textContent = `${(totals.dem||0).toLocaleString()} Dem • ${(totals.gop||0).toLocaleString()} GOP`;
+
+                    figure.appendChild(labels);
+                    figure.appendChild(bar);
+                    figure.appendChild(caption);
+
+                    // Center the entire figure in the chapter
                     var wrap = document.createElement('div');
                     wrap.style.display = 'flex';
                     wrap.style.alignItems = 'center';
-                    wrap.style.gap = '12px';
-                    wrap.style.margin = '8px 0 4px 0';
-
-                    var demShare = totals.dem / Math.max(1, (totals.dem + totals.gop));
-                    var gopShare = 1 - demShare;
-                    var demAngle = (demShare * 360).toFixed(1);
-
-                    var pie = document.createElement('div');
-                    pie.className = 'pie';
-                    pie.style.background = `conic-gradient(#1666CB 0deg ${demAngle}deg, #CC2F4A ${demAngle}deg 360deg)`;
-
-                    var legend = document.createElement('div');
-                    legend.style.fontSize = '13px';
-                    legend.style.lineHeight = '18px';
-                    var demPct = (demShare * 100).toFixed(1);
-                    var gopPct = (gopShare * 100).toFixed(1);
-                    legend.innerHTML = `
-                        <div><span style="display:inline-block;width:10px;height:10px;background:#1666CB;border-radius:2px;margin-right:6px"></span>Democrat ${demPct}%</div>
-                        <div><span style="display:inline-block;width:10px;height:10px;background:#CC2F4A;border-radius:2px;margin-right:6px"></span>Republican ${gopPct}%</div>
-                    `;
-
-                    wrap.appendChild(pie);
-                    wrap.appendChild(legend);
+                    wrap.style.justifyContent = 'center';
+                    wrap.style.margin = '10px 0 8px 0';
+                    wrap.appendChild(figure);
                     chapter.appendChild(wrap);
                 }
 
