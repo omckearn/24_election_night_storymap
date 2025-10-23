@@ -12,6 +12,7 @@
     <script src="https://cdn.jsdelivr.net/npm/mapbox-gl-globe-minimap@1.2.0/dist/bundle.js"></script>
     <script src="https://unpkg.com/@turf/turf/turf.min.js"></script> 
     <script src="https://unpkg.com/scrollama"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
     <style>
         :root {
             --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
@@ -252,24 +253,7 @@
             touch-action: unset;
         }
 
-        /* Statewide chart refined layout */
-        .state-chart{display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;pointer-events:none}
-        .state-chart>*{pointer-events:auto}
-        .state-chart .chart-labels{display:flex;justify-content:space-between;align-items:center;width:clamp(260px,38vw,340px);margin-bottom:8px}
-        .state-chart .lab{font-weight:600;font-size:16px}
-        .state-chart .lab.dem{color:#1666CB}
-        .state-chart .lab.gop{color:#CC2F4A}
-        .state-chart .chart-bar{position:relative;width:clamp(260px,38vw,340px);height:36px;border-radius:18px;background:rgba(255,255,255,0.12);box-shadow:inset 0 1px 2px rgba(0,0,0,0.35);overflow:hidden}
-        .state-chart .seg{height:100%}
-        .state-chart .seg.dem{float:left;background:#1666CB}
-        .state-chart .seg.gop{float:right;background:#CC2F4A}
-        .state-chart .midline{position:absolute;left:50%;top:15%;width:2px;height:70%;background:rgba(255,255,255,0.6)}
-        .state-chart .chart-caption{margin-top:8px;font-size:12px;opacity:.7;text-align:center;width:clamp(260px,38vw,340px)}
-
-        @media (max-width:750px){
-          .state-chart .lab{font-size:14px}
-          .state-chart .chart-bar{height:30px}
-        }
+        /* Custom statewide chart CSS removed; using Chart.js for rendering */
     </style>
 </head>
     
@@ -404,55 +388,90 @@
 
                     var stateName = (codeToName[stateCode] || stateCode || '').toString();
 
-                    var figure = document.createElement('figure');
-                    figure.className = 'state-chart';
-                    figure.setAttribute('aria-label', `${stateName} statewide results: Democrat ${demPct.toFixed(1)} percent, Republican ${gopPct.toFixed(1)} percent`);
-
-                    // Labels row
-                    var labels = document.createElement('div');
-                    labels.className = 'chart-labels';
-                    var labDem = document.createElement('span');
-                    labDem.className = 'lab dem';
-                    labDem.textContent = `Democrat ${demPct.toFixed(1)}%`;
-                    var labGop = document.createElement('span');
-                    labGop.className = 'lab gop';
-                    labGop.textContent = `Republican ${gopPct.toFixed(1)}%`;
-                    labels.appendChild(labDem);
-                    labels.appendChild(labGop);
-
-                    // Bar row
-                    var bar = document.createElement('div');
-                    bar.className = 'chart-bar';
-                    var segDem = document.createElement('div');
-                    segDem.className = 'seg dem';
-                    segDem.style.width = demPct.toFixed(3) + '%';
-                    var segGop = document.createElement('div');
-                    segGop.className = 'seg gop';
-                    segGop.style.width = gopPct.toFixed(3) + '%';
-                    var midline = document.createElement('div');
-                    midline.className = 'midline';
-                    midline.setAttribute('aria-hidden', 'true');
-                    bar.appendChild(segDem);
-                    bar.appendChild(segGop);
-                    bar.appendChild(midline);
-
-                    // Caption row
-                    var caption = document.createElement('figcaption');
-                    caption.className = 'chart-caption';
-                    caption.textContent = `${(totals.dem||0).toLocaleString()} Dem • ${(totals.gop||0).toLocaleString()} GOP`;
-
-                    figure.appendChild(labels);
-                    figure.appendChild(bar);
-                    figure.appendChild(caption);
-
-                    // Center the entire figure in the chapter
+                    // Canvas container
                     var wrap = document.createElement('div');
                     wrap.style.display = 'flex';
                     wrap.style.alignItems = 'center';
                     wrap.style.justifyContent = 'center';
                     wrap.style.margin = '10px 0 8px 0';
-                    wrap.appendChild(figure);
+
+                    var canvas = document.createElement('canvas');
+                    canvas.setAttribute('role', 'img');
+                    canvas.setAttribute('aria-label', `${stateName} statewide results: Democrat ${demPct.toFixed(1)} percent, Republican ${gopPct.toFixed(1)} percent`);
+                    canvas.style.width = 'clamp(260px, 38vw, 420px)';
+                    canvas.style.height = '64px';
+                    wrap.appendChild(canvas);
                     chapter.appendChild(wrap);
+
+                    // Chart.js setup with midline plugin
+                    try {
+                        if (window.Chart) {
+                            const MidlinePlugin = {
+                                id: 'midline50',
+                                afterDraw(chart, args, opts) {
+                                    const { ctx, chartArea, scales } = chart;
+                                    if (!chartArea) return;
+                                    const xScale = chart.scales.x;
+                                    if (!xScale) return;
+                                    const x = xScale.getPixelForValue(50);
+                                    ctx.save();
+                                    ctx.beginPath();
+                                    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+                                    ctx.lineWidth = 1;
+                                    ctx.moveTo(x, chartArea.top);
+                                    ctx.lineTo(x, chartArea.bottom);
+                                    ctx.stroke();
+                                    ctx.restore();
+                                }
+                            };
+                            Chart.register(MidlinePlugin);
+                            const ctx = canvas.getContext('2d');
+                            new Chart(ctx, {
+                                type: 'bar',
+                                data: {
+                                    labels: ['Democrat', 'Republican'],
+                                    datasets: [{
+                                        data: [demPct, gopPct],
+                                        backgroundColor: ['#1877F2', '#D93025'],
+                                        borderRadius: 8,
+                                        borderSkipped: false,
+                                        barPercentage: 0.9,
+                                        categoryPercentage: 0.9,
+                                    }]
+                                },
+                                options: {
+                                    responsive: true,
+                                    maintainAspectRatio: false,
+                                    animation: { duration: 350 },
+                                    indexAxis: 'y',
+                                    plugins: {
+                                        legend: { display: false },
+                                        tooltip: {
+                                            callbacks: {
+                                                label: (ctx) => `${ctx.label}: ${ctx.raw.toFixed(1)}%`
+                                            }
+                                        },
+                                        midline50: {}
+                                    },
+                                    scales: {
+                                        x: {
+                                            min: 0,
+                                            max: 100,
+                                            grid: { display: false },
+                                            ticks: { display: false },
+                                            border: { display: false }
+                                        },
+                                        y: {
+                                            grid: { display: false },
+                                            ticks: { display: false },
+                                            border: { display: false }
+                                        }
+                                    },
+                                    layout: { padding: 0 }
+                                }
+                            });
+                        }
+                    } catch (e) { /* ignore chart errors */ }
                 }
 
                 if (record.description) {
